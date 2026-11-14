@@ -1,0 +1,25 @@
+NOVA KEIM-1 für macOS
+=====================
+
+Inhalt
+  KEIM-1.vst3        Plugin für Ableton, Bitwig, Reaper, Cubase ...
+  KEIM-1.component   Audio Unit für Logic, GarageBand, Ableton
+  KEIM-1.app         eigenständige App zum schnellen Ausprobieren
+  Klangbeispiele     alle Werkssounds als WAV
+
+Installieren
+  1. Terminal öffnen (Programme > Dienstprogramme > Terminal)
+  2. Eintippen (Pfad anpassen, falls der Ordner woanders liegt):
+
+       bash ~/Downloads/KEIM-1/Installieren.command
+
+  3. In Ableton: Einstellungen > Plug-ins
+       - "VST3-Plug-in-Systemordner verwenden" an
+       - "Audio Units verwenden" an
+       - "Neu scannen"
+     KEIM-1 steht dann im Browser unter Plug-ins > NOVA.
+
+Warum das Skript?
+  Das Plugin ist nicht bei Apple signiert. Ohne das Skript blockiert macOS
+  heruntergeladene Plugins. Das Skript entfernt nur diese Download-Sperre
+  und kopiert die Dateien in ~/Library/Audio/Plug-Ins.
