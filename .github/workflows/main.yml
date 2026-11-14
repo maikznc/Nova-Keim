@@ -1,0 +1,101 @@
+# Baut NOVA KEIM-1 bei jedem Push als VST3, Audio Unit und Standalone-App für macOS
+# (Universal: Apple Silicon und Intel). Das Ergebnis steht unter "Actions" zum Download.
+# Der Projektordner wird automatisch gefunden, er darf auch in einem Unterordner liegen.
+
+name: macOS-Build
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    name: VST3 + AU + App (Universal)
+    runs-on: macos-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Code holen
+        uses: actions/checkout@v4
+
+      - name: Projektordner finden
+        run: |
+          CM=$(grep -rl --include=CMakeLists.txt "juce_add_plugin(KEIM1" . | grep -v "/build/" | head -1 || true)
+          if [ -z "$CM" ]; then
+            echo "::error::CMakeLists.txt von KEIM-1 nicht gefunden. Bitte den kompletten Projektordner ins Repository laden."
+            exit 1
+          fi
+          PROJ=$(dirname "$CM")
+          echo "Projektordner: $PROJ"
+          echo "PROJ=$PROJ" >> "$GITHUB_ENV"
+
+      - name: Konfigurieren (lädt JUCE automatisch)
+        working-directory: ${{ env.PROJ }}
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+
+      - name: Bauen
+        working-directory: ${{ env.PROJ }}
+        run: cmake --build build --config Release --parallel 4
+
+      - name: Selbsttest
+        working-directory: ${{ env.PROJ }}
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Ad-hoc signieren
+        working-directory: ${{ env.PROJ }}
+        run: |
+          ART=build/KEIM1_artefacts/Release
+          codesign --force --deep --sign - "$ART/VST3/KEIM-1.vst3"
+          codesign --force --deep --sign - "$ART/AU/KEIM-1.component"
+          codesign --force --deep --sign - "$ART/Standalone/KEIM-1.app"
+
+      - name: Paket schnüren
+        working-directory: ${{ env.PROJ }}
+        run: |
+          ART=build/KEIM1_artefacts/Release
+          mkdir -p dist/KEIM-1
+          cp -R "$ART/VST3/KEIM-1.vst3" "$ART/AU/KEIM-1.component" "$ART/Standalone/KEIM-1.app" dist/KEIM-1/
+          cp scripts/install-macos.sh dist/KEIM-1/Installieren.command
+          chmod +x dist/KEIM-1/Installieren.command
+          cp scripts/LIESMICH.txt dist/KEIM-1/
+          cp -R build/render dist/KEIM-1/Klangbeispiele
+          cd dist && ditto -c -k --keepParent KEIM-1 NOVA-KEIM-1-macOS.zip
+
+      - name: Hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: NOVA-KEIM-1-macOS
+          path: ${{ env.PROJ }}/dist/NOVA-KEIM-1-macOS.zip
+          retention-days: 30
+
+      - name: Audio Unit prüfen (auval)
+        working-directory: ${{ env.PROJ }}
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R "build/KEIM1_artefacts/Release/AU/KEIM-1.component" ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          sleep 3
+          auval -strict -v aumu Kei1 Nova
+
+      - name: VST3 prüfen (pluginval)
+        continue-on-error: true
+        working-directory: ${{ env.PROJ }}
+        run: |
+          curl -sSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip
+          unzip -q pluginval.zip
+          pluginval.app/Contents/MacOS/pluginval --strictness-level 5 --validate-in-process --skip-gui-tests "build/KEIM1_artefacts/Release/VST3/KEIM-1.vst3"
+
+      - name: Release anlegen (nur bei Tags)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.PROJ }}/dist/NOVA-KEIM-1-macOS.zip
